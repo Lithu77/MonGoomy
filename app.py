@@ -4,6 +4,7 @@ import sqlite3
 import json
 import instaloader
 from PIL import Image
+import re
 
 # --- CONFIGURATION SÉCURISÉE ---
 if "GOOGLE_API_KEY" in st.secrets:
@@ -33,17 +34,17 @@ st.markdown("""
     <style>
     @import url('https://fonts.cdnfonts.com/css/sf-pro-display');
 
-    /* Fond Gris Clair Apple */
+    /* Fond Gris Clair Apple officiel */
     .stApp {
         background-color: #F2F2F7 !important;
     }
 
-    /* Police Partout */
+    /* Police Apple partout */
     * {
         font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, sans-serif !important;
     }
 
-    /* Cartes Blanches GoomY */
+    /* Cartes Blanches GoomY (Expanders) */
     div[data-testid="stExpander"] {
         background-color: white !important;
         border-radius: 20px !important;
@@ -52,7 +53,7 @@ st.markdown("""
         margin-bottom: 15px !important;
     }
 
-    /* Supprimer la ligne de bordure Streamlit par défaut */
+    /* Nettoyage de l'entête des cartes */
     .streamlit-expanderHeader {
         border: none !important;
         font-size: 17px !important;
@@ -60,7 +61,7 @@ st.markdown("""
         color: #1C1C1E !important;
     }
 
-    /* Bouton vert Apple Style */
+    /* Bouton vert GoomY Pro */
     .stButton>button {
         border-radius: 15px !important;
         background-color: #34C759 !important;
@@ -72,15 +73,16 @@ st.markdown("""
         font-size: 16px !important;
     }
 
-    /* Badges iOS */
+    /* Badges iOS (Temps et Calories) */
     .badge-t { 
-        background: #E5E5EA; 
+        background: #F2F2F7; 
         padding: 6px 14px; 
         border-radius: 10px; 
         font-size: 13px; 
         font-weight: 600; 
         color: #3A3A3C; 
         margin-right: 8px;
+        border: 1px solid #E5E5EA;
     }
     .badge-c { 
         background: #FFF9E6; 
@@ -89,12 +91,19 @@ st.markdown("""
         font-size: 13px; 
         font-weight: 600; 
         color: #FF9500; 
+        border: 1px solid #FFE6A5;
+    }
+
+    /* Style du sélecteur de portions */
+    div[data-testid="stNumberInput"] {
+        background-color: #F2F2F7 !important;
+        border-radius: 12px !important;
     }
 
     /* Titres et textes */
     h1 { font-weight: 800 !important; letter-spacing: -1px !important; color: #000000 !important; }
-    h3 { font-weight: 700 !important; color: #1C1C1E !important; margin-top: 15px !important; }
-    p, li { color: #3A3A3C !important; line-height: 1.5 !important; }
+    h3 { font-weight: 700 !important; color: #1C1C1E !important; margin-top: 20px !important; }
+    p, li { color: #3A3A3C !important; line-height: 1.6 !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -140,7 +149,7 @@ with st.container():
                     conn.close()
                     st.rerun()
                 except:
-                    st.error("Erreur. Réessaie avec une capture !")
+                    st.error("Erreur de format IA. Réessaie !")
 
 # --- LISTE DES RECETTES ---
 st.write("### Mes Recettes")
@@ -149,26 +158,46 @@ c = conn.cursor()
 c.execute("SELECT * FROM recipes ORDER BY id DESC")
 rows = c.fetchall() 
 
+# Fonction pour multiplier les quantités numériques
+def multiplier_ingredients(texte, coef):
+    def replace_num(match):
+        num_str = match.group().replace(',', '.')
+        try:
+            num = float(num_str)
+            return str(round(num * coef, 1)).replace('.0', '')
+        except:
+            return num_str
+    return re.sub(r'\d+([.,]\d+)?', replace_num, texte)
+
 for r in rows:
-    # On affiche le titre et le temps directement dans l'entête
-    with st.expander(f"🍽️ {r[1]} — {r[3]}", expanded=False):
-        st.markdown(f"<p style='color:#8E8E93; font-size:14px; margin-bottom:12px;'>Par {r[2]}</p>", unsafe_allow_html=True)
-        st.markdown(f"<span class='badge-t'>⏱️ {r[3]}</span><span class='badge-c'>🔥 {r[4]}</span>", unsafe_allow_html=True)
+    id_recette, titre, auteur, temps, kcal_base, ingredients, etapes = r
+    
+    with st.expander(f"🍽️ {titre} — {temps}", expanded=False):
+        # --- LIGNE D'INFO ET SÉLECTEUR DE PORTIONS ---
+        col_info, col_qty = st.columns([2, 1])
         
+        with col_info:
+            st.markdown(f"<p style='color:#8E8E93; font-size:14px; margin-bottom:10px;'>Par {auteur}</p>", unsafe_allow_html=True)
+            st.markdown(f"<span class='badge-t'>⏱️ {temps}</span><span class='badge-c'>🔥 {kcal_base}</span>", unsafe_allow_html=True)
+        
+        with col_qty:
+            # Sélecteur interactif (Base 4 personnes)
+            nb_pers = st.number_input("Pers.", min_value=1, max_value=20, value=4, key=f"qty_{id_recette}", label_visibility="collapsed")
+            st.markdown(f"<p style='text-align:center; font-size:12px; color:#8E8E93;'>Portions: {nb_pers}</p>", unsafe_allow_html=True)
+
         st.subheader("🛒 Ingrédients")
-        # On force l'affichage en liste propre
-        ing = r[5].replace("•", "\n\n•").replace("  ", " ")
-        st.markdown(ing) 
+        ratio = nb_pers / 4 
+        ing_ajustes = multiplier_ingredients(ingredients, ratio)
+        st.markdown(ing_ajustes.replace("•", "\n\n•")) 
         
         st.subheader("👨‍🍳 Préparation")
-        prep = r[6].replace("•", "\n\n•").replace("  ", " ")
-        st.markdown(prep)
+        st.markdown(etapes.replace("•", "\n\n•"))
         
         st.divider()
-        if st.button(f"🗑️ Supprimer", key=f"del_{r[0]}"):
+        if st.button(f"🗑️ Supprimer", key=f"del_{id_recette}"):
             with sqlite3.connect('recipes.db') as conn_del:
                 c_del = conn_del.cursor()
-                c_del.execute("DELETE FROM recipes WHERE id=?", (r[0],))
+                c_del.execute("DELETE FROM recipes WHERE id=?", (id_recette,))
                 conn_del.commit()
             st.rerun()
 
