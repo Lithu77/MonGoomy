@@ -10,7 +10,7 @@ import re
 if "GOOGLE_API_KEY" in st.secrets:
     API_KEY = st.secrets["GOOGLE_API_KEY"]
 else:
-    API_KEY = "AIzaSyC9FTjyw83h1MSAtKNQXSGUW2_d6SJ8MPY" 
+    st.error("Clé API manquante ! Configurez le secrets Streamlit.")
 
 genai.configure(api_key=API_KEY)
 model = genai.GenerativeModel('gemini-2.5-flash')
